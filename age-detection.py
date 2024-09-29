@@ -35,7 +35,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.title("Age/Gender/Emotion Project :hugging_face:")
+st.title("Age/Gender/Emotion Project :nerd_face:")
 
 st.sidebar.header("Type")
 source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
