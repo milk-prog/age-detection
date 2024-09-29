@@ -30,7 +30,7 @@ def play_live_camera():
 
 st.set_page_config(
     page_title="Age/Gender/Emotion",
-    page_icon=":hugging_face:",
+    page_icon=":nerd_face:",
     layout="centered",
     initial_sidebar_state="expanded",
 )
