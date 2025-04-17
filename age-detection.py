@@ -1,7 +1,7 @@
-mport streamlit as st
-import PIL
+import streamlit as st
 import cv2
 import numpy as np
+import PIL
 import openvino as ov
 import io
 
@@ -23,7 +23,7 @@ compiled_model_ag = core.compile_model(model=model_age, device_name="CPU")
 input_layer_ag = compiled_model_ag.input(0)
 output_layer_ag = compiled_model_ag.output
 
-# ---- Preprocess ----
+# ---- Helper Functions ----
 def preprocess(image, input_layer):
     N, C, H, W = input_layer.shape
     resized_image = cv2.resize(image, (W, H))
@@ -31,57 +31,62 @@ def preprocess(image, input_layer):
     input_image = np.expand_dims(transposed_image, 0)
     return input_image
 
-# ---- Face Detection ----
 def find_faceboxes(image, results, threshold):
     results = results.squeeze()
     scores = results[:, 2]
     boxes = results[:, -4:]
     face_boxes = boxes[scores >= threshold]
-    scores = scores[scores >= threshold]
-
-    h, w, _ = image.shape
-    face_boxes = face_boxes * np.array([w, h, w, h])
+    image_h, image_w, _ = image.shape
+    face_boxes = face_boxes * np.array([image_w, image_h, image_w, image_h])
     face_boxes = face_boxes.astype(np.int64)
-    return face_boxes, scores
+    return face_boxes
 
-# ---- Drawing & Inference ----
-def draw_age_gender_emotion(face_boxes, image, input_layer_ag):
+def draw_age_gender_emotion(face_boxes, image, threshold):
     EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
     show_image = image.copy()
 
-    for i in range(len(face_boxes)):
-        xmin, ymin, xmax, ymax = face_boxes[i]
+    for box in face_boxes:
+        xmin, ymin, xmax, ymax = box
         face = image[ymin:ymax, xmin:xmax]
 
         # Emotion
-        input_image = preprocess(face, input_layer_emo)
-        results_emo = compiled_model_emo([input_image])[output_layer_emo].squeeze()
-        emotion_index = np.argmax(results_emo)
+        emo_input = preprocess(face, input_layer_emo)
+        emo_output = compiled_model_emo([emo_input])[output_layer_emo].squeeze()
+        emo_index = np.argmax(emo_output)
 
         # Age & Gender
-        input_image_ag = preprocess(face, input_layer_ag)
-        results_ag = compiled_model_ag([input_image_ag])
-        age = int(np.squeeze(results_ag[1]) * 100)
-        gender_data = np.squeeze(results_ag[0])
-        gender = 'female' if gender_data[0] >= 0.65 else 'male' if gender_data[1] >= 0.55 else 'unknown'
-        box_color = (200, 200, 0) if gender == 'female' else (0, 200, 200) if gender == 'male' else (200, 200, 200)
+        ag_input = preprocess(face, input_layer_ag)
+        ag_result = compiled_model_ag([ag_input])
+        age = int(np.squeeze(ag_result[1]) * 100)
+        gender_scores = np.squeeze(ag_result[0])
+        gender = 'female' if gender_scores[0] > 0.65 else 'male' if gender_scores[1] > 0.55 else 'unknown'
+        box_color = (200, 200, 0) if gender == 'female' else (0, 200, 200) if gender == 'male' else (150, 150, 150)
 
-        # Display
-        text = f"{gender} {age} {EMOTION_NAMES[emotion_index]}"
+        # Draw
+        label = f"{gender} {age} {EMOTION_NAMES[emo_index]}"
         font_scale = max(image.shape[1] / 900, 0.5)
-        cv2.putText(show_image, text, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 200, 0), 1)
+        cv2.putText(show_image, label, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 1)
         cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, 1)
 
     return show_image
 
-# ---- Prediction ----
 def predict_image(image, conf_threshold):
     input_image = preprocess(image, input_layer_face)
     results = compiled_model_face([input_image])[output_layer_face]
-    face_boxes, _ = find_faceboxes(image, results, conf_threshold)
-    return draw_age_gender_emotion(face_boxes, image, input_layer_ag)
+    face_boxes = find_faceboxes(image, results, conf_threshold)
+    return draw_age_gender_emotion(face_boxes, image, conf_threshold)
 
-# ---- Webcam Preview ----
+# ---- Streamlit UI ----
+st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🤓", layout="centered")
+st.title("Age/Gender/Emotion Project 🤓")
+
+st.sidebar.header("Type")
+source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
+
+st.sidebar.header("Confidence")
+conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
+
+# ---- Webcam (Streamlit Native) ----
 def play_live_camera():
     image_data = st.camera_input("Take a picture")
 
@@ -90,50 +95,38 @@ def play_live_camera():
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         st.image(predict_image(image_cv, conf_threshold), channels="BGR")
 
-
-# ---- Streamlit UI ----
-st.set_page_config(page_title="Age/Gender/Emotion", page_icon=":nerd_face:", layout="centered")
-st.title("Age/Gender/Emotion Project :nerd_face:")
-
-st.sidebar.header("Type")
-source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
-
-st.sidebar.header("Confidence")
-conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
-
-# ---- Image Mode ----
+# ---- Image ----
 if source_radio == "IMAGE":
-    input_img = st.sidebar.file_uploader("Upload an image", type=["jpg", "png"])
-    if input_img:
-        image = PIL.Image.open(input_img)
+    uploaded = st.sidebar.file_uploader("Upload an image", type=["jpg", "png"])
+    if uploaded:
+        image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         st.image(predict_image(image_cv, conf_threshold), channels="BGR")
     else:
         st.image("assets/sample_image.jpg")
-        st.write("Upload an image from the sidebar.")
+        st.info("Upload an image to try it out.")
 
-# ---- Video Mode ----
+# ---- Video ----
 elif source_radio == "VIDEO":
-    input_vid = st.sidebar.file_uploader("Upload a video", type=["mp4"])
-    if input_vid:
+    uploaded = st.sidebar.file_uploader("Upload a video", type=["mp4"])
+    if uploaded:
         with open("upload.mp4", "wb") as f:
-            f.write(input_vid.read())
+            f.write(uploaded.read())
         cap = cv2.VideoCapture("upload.mp4")
         st_frame = st.empty()
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            output = predict_image(frame, conf_threshold)
-            st_frame.image(output, channels="BGR")
+            frame_out = predict_image(frame, conf_threshold)
+            st_frame.image(frame_out, channels="BGR")
         cap.release()
     else:
         st.video("assets/sample_video.mp4")
 
-# ---- Webcam Mode ----
+# ---- Webcam ----
 elif source_radio == "WEBCAM":
     play_live_camera()
-
 
 
 
