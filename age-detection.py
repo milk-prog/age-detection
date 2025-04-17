@@ -41,7 +41,7 @@ def find_faceboxes(image, results, threshold):
     face_boxes = face_boxes.astype(np.int64)
     return face_boxes
 
-def draw_age_gender_emotion(face_boxes, image, threshold):
+def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=2):
     EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
     show_image = image.copy()
 
@@ -62,19 +62,18 @@ def draw_age_gender_emotion(face_boxes, image, threshold):
         gender = 'female' if gender_scores[0] > 0.65 else 'male' if gender_scores[1] > 0.55 else 'unknown'
         box_color = (200, 200, 0) if gender == 'female' else (0, 200, 200) if gender == 'male' else (150, 150, 150)
 
-        # Draw box and label
         label = f"{gender} {age} {EMOTION_NAMES[emo_index]}"
         font_scale = max(image.shape[1] / 900, 0.5)
-        cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, 2)
+        cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, box_thickness)
         cv2.putText(show_image, label, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 1)
 
     return show_image
 
-def predict_image(image, conf_threshold):
+def predict_image(image, conf_threshold, box_thickness=2):
     input_image = preprocess(image, input_layer_face)
     results = compiled_model_face([input_image])[output_layer_face]
     face_boxes = find_faceboxes(image, results, conf_threshold)
-    return draw_age_gender_emotion(face_boxes, image, conf_threshold)
+    return draw_age_gender_emotion(face_boxes, image, conf_threshold, box_thickness)
 
 # ---- Streamlit UI ----
 st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🤓", layout="centered")
@@ -92,7 +91,7 @@ def play_live_camera():
     if image_data is not None:
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        result = predict_image(image_cv, conf_threshold)
+        result = predict_image(image_cv, conf_threshold, box_thickness=1)
         st.image(result, channels="BGR")
 
 # ---- Image Upload ----
@@ -101,7 +100,7 @@ if source_radio == "IMAGE":
     if uploaded:
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        result = predict_image(image_cv, conf_threshold)
+        result = predict_image(image_cv, conf_threshold, box_thickness=3)
         st.image(result, channels="BGR")
     else:
         st.image("assets/sample_image.jpg")
@@ -119,7 +118,7 @@ elif source_radio == "VIDEO":
             ret, frame = cap.read()
             if not ret:
                 break
-            result = predict_image(frame, conf_threshold)
+            result = predict_image(frame, conf_threshold, box_thickness=3)
             st_frame.image(result, channels="BGR")
         cap.release()
     else:
@@ -128,5 +127,4 @@ elif source_radio == "VIDEO":
 # ---- Webcam ----
 elif source_radio == "WEBCAM":
     play_live_camera()
-
 
