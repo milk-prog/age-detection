@@ -62,11 +62,11 @@ def draw_age_gender_emotion(face_boxes, image, threshold):
         gender = 'female' if gender_scores[0] > 0.65 else 'male' if gender_scores[1] > 0.55 else 'unknown'
         box_color = (200, 200, 0) if gender == 'female' else (0, 200, 200) if gender == 'male' else (150, 150, 150)
 
-        # Draw
+        # Draw box and label
         label = f"{gender} {age} {EMOTION_NAMES[emo_index]}"
         font_scale = max(image.shape[1] / 900, 0.5)
+        cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, 2)
         cv2.putText(show_image, label, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 1)
-        cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, 1)
 
     return show_image
 
@@ -86,27 +86,28 @@ source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
 st.sidebar.header("Confidence")
 conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
 
-# ---- Webcam (Streamlit Native) ----
+# ---- Webcam with st.camera_input ----
 def play_live_camera():
-    image_data = st.camera_input("Take a picture")
-
+    image_data = st.camera_input("Take a photo using your webcam")
     if image_data is not None:
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        st.image(predict_image(image_cv, conf_threshold), channels="BGR")
+        result = predict_image(image_cv, conf_threshold)
+        st.image(result, channels="BGR")
 
-# ---- Image ----
+# ---- Image Upload ----
 if source_radio == "IMAGE":
     uploaded = st.sidebar.file_uploader("Upload an image", type=["jpg", "png"])
     if uploaded:
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        st.image(predict_image(image_cv, conf_threshold), channels="BGR")
+        result = predict_image(image_cv, conf_threshold)
+        st.image(result, channels="BGR")
     else:
         st.image("assets/sample_image.jpg")
         st.info("Upload an image to try it out.")
 
-# ---- Video ----
+# ---- Video Upload ----
 elif source_radio == "VIDEO":
     uploaded = st.sidebar.file_uploader("Upload a video", type=["mp4"])
     if uploaded:
@@ -118,8 +119,8 @@ elif source_radio == "VIDEO":
             ret, frame = cap.read()
             if not ret:
                 break
-            frame_out = predict_image(frame, conf_threshold)
-            st_frame.image(frame_out, channels="BGR")
+            result = predict_image(frame, conf_threshold)
+            st_frame.image(result, channels="BGR")
         cap.release()
     else:
         st.video("assets/sample_video.mp4")
@@ -127,8 +128,5 @@ elif source_radio == "VIDEO":
 # ---- Webcam ----
 elif source_radio == "WEBCAM":
     play_live_camera()
-
-
-
 
 
