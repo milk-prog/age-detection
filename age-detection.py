@@ -128,3 +128,7 @@ elif source_radio == "VIDEO":
 elif source_radio == "WEBCAM":
     play_live_camera()
 
+# ---- Webcam ----
+elif source_radio == "WEBCAM":
+    play_live_camera()
+
