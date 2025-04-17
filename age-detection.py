@@ -1,94 +1,139 @@
-import streamlit as st
+mport streamlit as st
 import PIL
 import cv2
-import numpy
-import utils
+import numpy as np
+import openvino as ov
 import io
-from camera_input_live import camera_input_live
 
-def play_video(video_source):
-    camera = cv2.VideoCapture(video_source)
+# ---- Load Models ----
+core = ov.Core()
 
-    st_frame = st.empty()
-    while(camera.isOpened()):
-        ret, frame = camera.read()
+model_face = core.read_model(model='models/face-detection-adas-0001.xml')
+compiled_model_face = core.compile_model(model=model_face, device_name="CPU")
+input_layer_face = compiled_model_face.input(0)
+output_layer_face = compiled_model_face.output(0)
 
-        if ret:
-            visualized_image = utils.predict_image(frame, conf_threshold = conf_threshold)
-            st_frame.image(visualized_image, channels = "BGR")
-        else:
-            camera.release() # end video when no more footage
-            break
+model_emo = core.read_model(model='models/emotions-recognition-retail-0003.xml')
+compiled_model_emo = core.compile_model(model=model_emo, device_name="CPU")
+input_layer_emo = compiled_model_emo.input(0)
+output_layer_emo = compiled_model_emo.output(0)
 
+model_age = core.read_model(model='models/age-gender-recognition-retail-0013.xml')
+compiled_model_ag = core.compile_model(model=model_age, device_name="CPU")
+input_layer_ag = compiled_model_ag.input(0)
+output_layer_ag = compiled_model_ag.output
+
+# ---- Preprocess ----
+def preprocess(image, input_layer):
+    N, C, H, W = input_layer.shape
+    resized_image = cv2.resize(image, (W, H))
+    transposed_image = resized_image.transpose(2, 0, 1)
+    input_image = np.expand_dims(transposed_image, 0)
+    return input_image
+
+# ---- Face Detection ----
+def find_faceboxes(image, results, threshold):
+    results = results.squeeze()
+    scores = results[:, 2]
+    boxes = results[:, -4:]
+    face_boxes = boxes[scores >= threshold]
+    scores = scores[scores >= threshold]
+
+    h, w, _ = image.shape
+    face_boxes = face_boxes * np.array([w, h, w, h])
+    face_boxes = face_boxes.astype(np.int64)
+    return face_boxes, scores
+
+# ---- Drawing & Inference ----
+def draw_age_gender_emotion(face_boxes, image, input_layer_ag):
+    EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
+    show_image = image.copy()
+
+    for i in range(len(face_boxes)):
+        xmin, ymin, xmax, ymax = face_boxes[i]
+        face = image[ymin:ymax, xmin:xmax]
+
+        # Emotion
+        input_image = preprocess(face, input_layer_emo)
+        results_emo = compiled_model_emo([input_image])[output_layer_emo].squeeze()
+        emotion_index = np.argmax(results_emo)
+
+        # Age & Gender
+        input_image_ag = preprocess(face, input_layer_ag)
+        results_ag = compiled_model_ag([input_image_ag])
+        age = int(np.squeeze(results_ag[1]) * 100)
+        gender_data = np.squeeze(results_ag[0])
+        gender = 'female' if gender_data[0] >= 0.65 else 'male' if gender_data[1] >= 0.55 else 'unknown'
+        box_color = (200, 200, 0) if gender == 'female' else (0, 200, 200) if gender == 'male' else (200, 200, 200)
+
+        # Display
+        text = f"{gender} {age} {EMOTION_NAMES[emotion_index]}"
+        font_scale = max(image.shape[1] / 900, 0.5)
+        cv2.putText(show_image, text, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 200, 0), 1)
+        cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, 1)
+
+    return show_image
+
+# ---- Prediction ----
+def predict_image(image, conf_threshold):
+    input_image = preprocess(image, input_layer_face)
+    results = compiled_model_face([input_image])[output_layer_face]
+    face_boxes, _ = find_faceboxes(image, results, conf_threshold)
+    return draw_age_gender_emotion(face_boxes, image, input_layer_ag)
+
+# ---- Webcam Preview ----
 def play_live_camera():
-    image = camera_input_live()
-    uploaded_image = PIL.Image.open(image)
-    uploaded_image_cv = cv2.cvtColor(numpy.array(uploaded_image), cv2.COLOR_RGB2BGR)
-    visualized_image = utils.predict_image(uploaded_image_cv, conf_threshold = conf_threshold)
-    st.image(visualized_image, channels = "BGR")
-            
+    image_data = st.camera_input("Take a picture")
 
-st.set_page_config(
-    page_title="Age/Gender/Emotion",
-    page_icon=":nerd_face:",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
+    if image_data is not None:
+        image = PIL.Image.open(image_data)
+        image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        st.image(predict_image(image_cv, conf_threshold), channels="BGR")
 
+
+# ---- Streamlit UI ----
+st.set_page_config(page_title="Age/Gender/Emotion", page_icon=":nerd_face:", layout="centered")
 st.title("Age/Gender/Emotion Project :nerd_face:")
 
 st.sidebar.header("Type")
 source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
 
 st.sidebar.header("Confidence")
-conf_threshold = float(st.sidebar.slider("Select the Confidence Threshold", 10, 100, 20))/100
+conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
 
-input = None
+# ---- Image Mode ----
 if source_radio == "IMAGE":
-    st.sidebar.header("Upload")
-    input = st.sidebar.file_uploader("Choose an image.", type=("jpg","png"))
-
-    if input is not None:
-        uploaded_image = PIL.Image.open(input)
-        uploaded_image_cv = cv2.cvtColor(numpy.array(uploaded_image), cv2.COLOR_RGB2BGR)
-        visualized_image = utils.predict_image(uploaded_image_cv, conf_threshold = conf_threshold)
-        
-        st.image(visualized_image, channels = "BGR")
-
+    input_img = st.sidebar.file_uploader("Upload an image", type=["jpg", "png"])
+    if input_img:
+        image = PIL.Image.open(input_img)
+        image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        st.image(predict_image(image_cv, conf_threshold), channels="BGR")
     else:
-        st.image("assets/sample_image.jpg") # A default image is displayed before the input image is uploaded
-        st.write("Click on 'Browse Files' in the sidebar to run inference on an image")
-        
+        st.image("assets/sample_image.jpg")
+        st.write("Upload an image from the sidebar.")
 
-input = None
-temporary_location = None # Initialize the temporary_location variable
-if source_radio == "VIDEO":
-    st.sidebar.header("Upload")
-    input = st.sidebar.file_uploader("Choose a video.", type=("mp4"))
-
-    if input is not None:
-        g = io.BytesIO(input.read())
-        temporary_location = "upload.mp4"
-
-        with open(temporary_location, "wb") as out:
-            out.write(g.read())
-
-        out.close()
-
-    if temporary_location is not None:
-        
-        play_video(temporary_location) # When the video is uploaded, run the play_video function
-        if st.button("Replay", type="primary"):      
-            pass # Using pass will cause the code to continue, in which case the video will play again
-
+# ---- Video Mode ----
+elif source_radio == "VIDEO":
+    input_vid = st.sidebar.file_uploader("Upload a video", type=["mp4"])
+    if input_vid:
+        with open("upload.mp4", "wb") as f:
+            f.write(input_vid.read())
+        cap = cv2.VideoCapture("upload.mp4")
+        st_frame = st.empty()
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            output = predict_image(frame, conf_threshold)
+            st_frame.image(output, channels="BGR")
+        cap.release()
     else:
         st.video("assets/sample_video.mp4")
-        st.write("Click on 'Browse Files' in the sidebar to run inference on an video.")        
 
-    
-
-if source_radio == "WEBCAM":
+# ---- Webcam Mode ----
+elif source_radio == "WEBCAM":
     play_live_camera()
+
 
 
 
