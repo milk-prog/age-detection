@@ -99,12 +99,17 @@ def play_live_camera():
     if image_data is not None:
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
         result = predict_image(image_cv, conf_threshold, box_thickness=2, box_color=(255, 0, 0))
         st.image(result, channels="BGR")
 
-        img_bytes = convert_image_to_bytes(result)
-        if img_bytes:
-            st.download_button("📥 Download Webcam Capture", data=img_bytes, file_name="webcam_image.jpg", mime="image/jpeg")
+        processed_bytes = convert_image_to_bytes(result)
+        if processed_bytes:
+            st.download_button("📥 Download Processed Webcam Image", data=processed_bytes, file_name="webcam_processed.jpg", mime="image/jpeg")
+
+        original_bytes = convert_image_to_bytes(image_cv)
+        if original_bytes:
+            st.download_button("📷 Download Original Webcam Image", data=original_bytes, file_name="webcam_original.jpg", mime="image/jpeg")
 
 # ---- Image Upload ----
 if source_radio == "IMAGE":
@@ -112,12 +117,17 @@ if source_radio == "IMAGE":
     if uploaded:
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
         result = predict_image(image_cv, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
         st.image(result, channels="BGR")
 
-        img_bytes = convert_image_to_bytes(result)
-        if img_bytes:
-            st.download_button("📥 Download Result Image", data=img_bytes, file_name="processed_image.jpg", mime="image/jpeg")
+        processed_bytes = convert_image_to_bytes(result)
+        if processed_bytes:
+            st.download_button("📥 Download Processed Image (with boxes)", data=processed_bytes, file_name="processed_image.jpg", mime="image/jpeg")
+
+        original_bytes = convert_image_to_bytes(image_cv)
+        if original_bytes:
+            st.download_button("📷 Download Original Image (no boxes)", data=original_bytes, file_name="original_image.jpg", mime="image/jpeg")
     else:
         st.image("assets/sample_image.jpg")
         st.info("Upload an image to try it out.")
@@ -139,16 +149,15 @@ elif source_radio == "VIDEO":
             result = predict_image(frame, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
             last_result = result
             st_frame.image(result, channels="BGR")
-
         cap.release()
 
         if last_result is not None:
-            img_bytes = convert_image_to_bytes(last_result)
-            if img_bytes:
-                st.download_button("📥 Download Last Video Frame", data=img_bytes, file_name="video_frame.jpg", mime="image/jpeg")
+            processed_bytes = convert_image_to_bytes(last_result)
+            if processed_bytes:
+                st.download_button("📥 Download Last Video Frame", data=processed_bytes, file_name="video_frame.jpg", mime="image/jpeg")
     else:
         st.video("assets/sample_video.mp4")
 
-# ---- Webcam ----
+# ---- Webcam Capture ----
 elif source_radio == "WEBCAM":
     play_live_camera()
