@@ -43,6 +43,9 @@ def find_faceboxes(image, results, threshold):
 
 def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_color=(255, 0, 0)):
     EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
+    EMOTION_ICONS = {'neutral': '😐', 'happy': '😊', 'sad': '😢', 'surprise': '😲', 'anger': '😠'}
+    emotion_counts = {name: 0 for name in EMOTION_NAMES}
+
     show_image = image.copy()
 
     for box in face_boxes:
@@ -52,6 +55,8 @@ def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_c
         emo_input = preprocess(face, input_layer_emo)
         emo_output = compiled_model_emo([emo_input])[output_layer_emo].squeeze()
         emo_index = np.argmax(emo_output)
+        emotion = EMOTION_NAMES[emo_index]
+        emotion_counts[emotion] += 1
 
         ag_input = preprocess(face, input_layer_ag)
         ag_result = compiled_model_ag([ag_input])
@@ -59,7 +64,7 @@ def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_c
         gender_scores = np.squeeze(ag_result[0])
         gender = 'female' if gender_scores[0] > 0.65 else 'male' if gender_scores[1] > 0.55 else 'unknown'
 
-        label = f"{gender} {age} {EMOTION_NAMES[emo_index]}"
+        label = f"{gender} {age} {emotion}"
         font_scale = max(image.shape[1] / 900, 0.6)
         font = cv2.FONT_HERSHEY_SIMPLEX
         text_size, _ = cv2.getTextSize(label, font, font_scale, 1)
@@ -69,7 +74,7 @@ def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_c
         cv2.rectangle(show_image, (xmin, ymin - text_h - 10), (xmin + text_w + 10, ymin), box_color, -1)
         cv2.putText(show_image, label, (xmin + 5, ymin - 5), font, font_scale, (255, 255, 255), 2)
 
-    return show_image
+    return show_image, emotion_counts
 
 def predict_image(image, conf_threshold, box_thickness=4, box_color=(255, 0, 0)):
     input_image = preprocess(image, input_layer_face)
@@ -100,10 +105,15 @@ def play_live_camera():
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        result = predict_image(image_cv, conf_threshold, box_thickness=2, box_color=(255, 0, 0))
-        st.image(result, channels="BGR")
+        result_image, emotion_counts = predict_image(image_cv, conf_threshold, box_thickness=2, box_color=(255, 0, 0))
+        st.image(result_image, channels="BGR")
 
-        processed_bytes = convert_image_to_bytes(result)
+        st.subheader("Emotion Summary")
+        for emotion, count in emotion_counts.items():
+            emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
+            st.write(f"{emoji} {emotion.capitalize()}: {count}")
+
+        processed_bytes = convert_image_to_bytes(result_image)
         if processed_bytes:
             st.download_button("📥 Download Processed Webcam Image", data=processed_bytes, file_name="webcam_processed.jpg", mime="image/jpeg")
 
@@ -118,10 +128,15 @@ if source_radio == "IMAGE":
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        result = predict_image(image_cv, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
-        st.image(result, channels="BGR")
+        result_image, emotion_counts = predict_image(image_cv, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
+        st.image(result_image, channels="BGR")
 
-        processed_bytes = convert_image_to_bytes(result)
+        st.subheader("Emotion Summary")
+        for emotion, count in emotion_counts.items():
+            emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
+            st.write(f"{emoji} {emotion.capitalize()}: {count}")
+
+        processed_bytes = convert_image_to_bytes(result_image)
         if processed_bytes:
             st.download_button("📥 Download Processed Image (with boxes)", data=processed_bytes, file_name="processed_image.jpg", mime="image/jpeg")
 
@@ -141,23 +156,31 @@ elif source_radio == "VIDEO":
         cap = cv2.VideoCapture("upload.mp4")
         st_frame = st.empty()
         last_result = None
+        last_emotions = None
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            result = predict_image(frame, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
-            last_result = result
-            st_frame.image(result, channels="BGR")
+            result_image, emotion_counts = predict_image(frame, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
+            last_result = result_image
+            last_emotions = emotion_counts
+            st_frame.image(result_image, channels="BGR")
+
         cap.release()
 
         if last_result is not None:
+            st.subheader("Emotion Summary")
+            for emotion, count in last_emotions.items():
+                emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
+                st.write(f"{emoji} {emotion.capitalize()}: {count}")
+
             processed_bytes = convert_image_to_bytes(last_result)
             if processed_bytes:
                 st.download_button("📥 Download Last Video Frame", data=processed_bytes, file_name="video_frame.jpg", mime="image/jpeg")
     else:
         st.video("assets/sample_video.mp4")
 
-# ---- Webcam Capture ----
+# ---- Webcam Mode ----
 elif source_radio == "WEBCAM":
     play_live_camera()
