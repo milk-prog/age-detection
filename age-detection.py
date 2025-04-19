@@ -41,7 +41,7 @@ def find_faceboxes(image, results, threshold):
     face_boxes = face_boxes.astype(np.int64)
     return face_boxes
 
-def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4):
+def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_color=(255, 0, 0)):  # Blue
     EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
     show_image = image.copy()
 
@@ -60,12 +60,11 @@ def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4):
         age = int(np.squeeze(ag_result[1]) * 100)
         gender_scores = np.squeeze(ag_result[0])
         gender = 'female' if gender_scores[0] > 0.65 else 'male' if gender_scores[1] > 0.55 else 'unknown'
-        box_color = (255, 0, 0) if gender == 'female' else (0, 255, 255) if gender == 'male' else (255, 255, 255)
 
         # Draw bounding box
         cv2.rectangle(show_image, (xmin, ymin), (xmax, ymax), box_color, box_thickness)
 
-        # Draw label with background
+        # Draw label background and text
         label = f"{gender} {age} {EMOTION_NAMES[emo_index]}"
         font_scale = max(image.shape[1] / 900, 0.6)
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -77,11 +76,11 @@ def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4):
 
     return show_image
 
-def predict_image(image, conf_threshold, box_thickness=4):
+def predict_image(image, conf_threshold, box_thickness=4, box_color=(255, 0, 0)):  # Blue
     input_image = preprocess(image, input_layer_face)
     results = compiled_model_face([input_image])[output_layer_face]
     face_boxes = find_faceboxes(image, results, conf_threshold)
-    return draw_age_gender_emotion(face_boxes, image, conf_threshold, box_thickness)
+    return draw_age_gender_emotion(face_boxes, image, conf_threshold, box_thickness, box_color)
 
 # ---- Streamlit UI ----
 st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🤓", layout="centered")
@@ -93,28 +92,28 @@ source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
 st.sidebar.header("Confidence")
 conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
 
-# ---- Webcam with st.camera_input ----
+# ---- Webcam (Blue Box) ----
 def play_live_camera():
     image_data = st.camera_input("Take a photo using your webcam")
     if image_data is not None:
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        result = predict_image(image_cv, conf_threshold, box_thickness=2)
+        result = predict_image(image_cv, conf_threshold, box_thickness=2, box_color=(255, 0, 0))  # Blue box
         st.image(result, channels="BGR")
 
-# ---- Image Upload ----
+# ---- Image Upload (Blue Box) ----
 if source_radio == "IMAGE":
     uploaded = st.sidebar.file_uploader("Upload an image", type=["jpg", "png"])
     if uploaded:
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        result = predict_image(image_cv, conf_threshold, box_thickness=4)
+        result = predict_image(image_cv, conf_threshold, box_thickness=4, box_color=(255, 0, 0))  # Blue box
         st.image(result, channels="BGR")
     else:
         st.image("assets/sample_image.jpg")
         st.info("Upload an image to try it out.")
 
-# ---- Video Upload ----
+# ---- Video Upload (Blue Box) ----
 elif source_radio == "VIDEO":
     uploaded = st.sidebar.file_uploader("Upload a video", type=["mp4"])
     if uploaded:
@@ -126,12 +125,12 @@ elif source_radio == "VIDEO":
             ret, frame = cap.read()
             if not ret:
                 break
-            result = predict_image(frame, conf_threshold, box_thickness=4)
+            result = predict_image(frame, conf_threshold, box_thickness=4, box_color=(255, 0, 0))  # Blue box
             st_frame.image(result, channels="BGR")
         cap.release()
     else:
         st.video("assets/sample_video.mp4")
 
-# ---- Webcam ----
+# ---- Webcam Mode ----
 elif source_radio == "WEBCAM":
     play_live_camera()
