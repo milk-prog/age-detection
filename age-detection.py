@@ -5,6 +5,10 @@ import PIL
 import openvino as ov
 from io import BytesIO
 
+# ---- Init Session State for Emotion Summary ----
+if 'emotion_summary' not in st.session_state:
+    st.session_state.emotion_summary = {'neutral': 0, 'happy': 0, 'sad': 0, 'surprise': 0, 'anger': 0}
+
 # ---- Load Models ----
 core = ov.Core()
 
@@ -43,7 +47,6 @@ def find_faceboxes(image, results, threshold):
 
 def draw_age_gender_emotion(face_boxes, image, threshold, box_thickness=4, box_color=(255, 0, 0)):
     EMOTION_NAMES = ['neutral', 'happy', 'sad', 'surprise', 'anger']
-    EMOTION_ICONS = {'neutral': '😐', 'happy': '😊', 'sad': '😢', 'surprise': '😲', 'anger': '😠'}
     emotion_counts = {name: 0 for name in EMOTION_NAMES}
 
     show_image = image.copy()
@@ -89,14 +92,17 @@ def convert_image_to_bytes(image_cv):
     return None
 
 # ---- Streamlit UI ----
-st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🤓", layout="centered")
-st.title("Age/Gender/Emotion Project 🤓")
+st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🧒", layout="centered")
+st.title("Age/Gender/Emotion Project 🧒")
 
 st.sidebar.header("Type")
 source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
 
 st.sidebar.header("Confidence")
 conf_threshold = float(st.sidebar.slider("Confidence Threshold (%)", 10, 100, 20)) / 100
+
+if st.sidebar.button("🔄 Reset Emotion Summary"):
+    st.session_state.emotion_summary = {e: 0 for e in st.session_state.emotion_summary}
 
 # ---- Webcam ----
 def play_live_camera():
@@ -105,21 +111,19 @@ def play_live_camera():
         image = PIL.Image.open(image_data)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        result_image, emotion_counts = predict_image(image_cv, conf_threshold, box_thickness=2, box_color=(255, 0, 0))
+        result_image, emotion_counts = predict_image(image_cv, conf_threshold, box_thickness=2)
         st.image(result_image, channels="BGR")
 
-        st.subheader("Emotion Summary")
         for emotion, count in emotion_counts.items():
-            emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
-            st.write(f"{emoji} {emotion.capitalize()}: {count}")
+            st.session_state.emotion_summary[emotion] += count
 
-        processed_bytes = convert_image_to_bytes(result_image)
-        if processed_bytes:
-            st.download_button("📥 Download Processed Webcam Image", data=processed_bytes, file_name="webcam_processed.jpg", mime="image/jpeg")
+        st.subheader("Total Emotion Summary")
+        emoji_map = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}
+        for emotion, total in st.session_state.emotion_summary.items():
+            st.write(f"{emoji_map[emotion]} {emotion.capitalize()}: {total}")
 
-        original_bytes = convert_image_to_bytes(image_cv)
-        if original_bytes:
-            st.download_button("📷 Download Original Webcam Image", data=original_bytes, file_name="webcam_original.jpg", mime="image/jpeg")
+        st.download_button("📅 Download Processed Webcam Image", data=convert_image_to_bytes(result_image), file_name="webcam_processed.jpg", mime="image/jpeg")
+        st.download_button("📷 Download Original Webcam Image", data=convert_image_to_bytes(image_cv), file_name="webcam_original.jpg", mime="image/jpeg")
 
 # ---- Image Upload ----
 if source_radio == "IMAGE":
@@ -128,21 +132,19 @@ if source_radio == "IMAGE":
         image = PIL.Image.open(uploaded)
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        result_image, emotion_counts = predict_image(image_cv, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
+        result_image, emotion_counts = predict_image(image_cv, conf_threshold)
         st.image(result_image, channels="BGR")
 
-        st.subheader("Emotion Summary")
         for emotion, count in emotion_counts.items():
-            emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
-            st.write(f"{emoji} {emotion.capitalize()}: {count}")
+            st.session_state.emotion_summary[emotion] += count
 
-        processed_bytes = convert_image_to_bytes(result_image)
-        if processed_bytes:
-            st.download_button("📥 Download Processed Image (with boxes)", data=processed_bytes, file_name="processed_image.jpg", mime="image/jpeg")
+        st.subheader("Total Emotion Summary")
+        emoji_map = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}
+        for emotion, total in st.session_state.emotion_summary.items():
+            st.write(f"{emoji_map[emotion]} {emotion.capitalize()}: {total}")
 
-        original_bytes = convert_image_to_bytes(image_cv)
-        if original_bytes:
-            st.download_button("📷 Download Original Image (no boxes)", data=original_bytes, file_name="original_image.jpg", mime="image/jpeg")
+        st.download_button("📅 Download Processed Image (with boxes)", data=convert_image_to_bytes(result_image), file_name="processed_image.jpg", mime="image/jpeg")
+        st.download_button("📷 Download Original Image (no boxes)", data=convert_image_to_bytes(image_cv), file_name="original_image.jpg", mime="image/jpeg")
     else:
         st.image("assets/sample_image.jpg")
         st.info("Upload an image to try it out.")
@@ -162,7 +164,7 @@ elif source_radio == "VIDEO":
             ret, frame = cap.read()
             if not ret:
                 break
-            result_image, emotion_counts = predict_image(frame, conf_threshold, box_thickness=4, box_color=(255, 0, 0))
+            result_image, emotion_counts = predict_image(frame, conf_threshold)
             last_result = result_image
             last_emotions = emotion_counts
             st_frame.image(result_image, channels="BGR")
@@ -170,17 +172,19 @@ elif source_radio == "VIDEO":
         cap.release()
 
         if last_result is not None:
-            st.subheader("Emotion Summary")
             for emotion, count in last_emotions.items():
-                emoji = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}[emotion]
-                st.write(f"{emoji} {emotion.capitalize()}: {count}")
+                st.session_state.emotion_summary[emotion] += count
 
-            processed_bytes = convert_image_to_bytes(last_result)
-            if processed_bytes:
-                st.download_button("📥 Download Last Video Frame", data=processed_bytes, file_name="video_frame.jpg", mime="image/jpeg")
+            st.subheader("Total Emotion Summary")
+            emoji_map = {"neutral": "😐", "happy": "😊", "sad": "😢", "surprise": "😲", "anger": "😠"}
+            for emotion, total in st.session_state.emotion_summary.items():
+                st.write(f"{emoji_map[emotion]} {emotion.capitalize()}: {total}")
+
+            st.download_button("📅 Download Last Video Frame", data=convert_image_to_bytes(last_result), file_name="video_frame.jpg", mime="image/jpeg")
     else:
         st.video("assets/sample_video.mp4")
 
 # ---- Webcam Mode ----
 elif source_radio == "WEBCAM":
     play_live_camera()
+
