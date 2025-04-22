@@ -93,7 +93,8 @@ def convert_image_to_bytes(image_cv):
 
 # ---- Streamlit UI ----
 st.set_page_config(page_title="Age/Gender/Emotion", page_icon=":nerd_face:", layout="centered")
-st.title("Age/Gender/Emotion Project 🧒")
+st.title("Age/Gender/Emotion Project 🤓")
+
 
 st.sidebar.header("Type")
 source_radio = st.sidebar.radio("Select Source", ["IMAGE", "VIDEO", "WEBCAM"])
