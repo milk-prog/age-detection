@@ -92,7 +92,7 @@ def convert_image_to_bytes(image_cv):
     return None
 
 # ---- Streamlit UI ----
-st.set_page_config(page_title="Age/Gender/Emotion", page_icon="🧒", layout="centered")
+st.set_page_config(page_title="Age/Gender/Emotion", page_icon=":nerd_face:", layout="centered")
 st.title("Age/Gender/Emotion Project 🧒")
 
 st.sidebar.header("Type")
